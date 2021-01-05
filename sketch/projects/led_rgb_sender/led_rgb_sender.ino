@@ -21,7 +21,8 @@
 static WiFiClient client;
 
 Adafruit_MQTT_Client mqtt(&client, AIO_SERVER, AIO_SERVERPORT, AIO_USERNAME, AIO_KEY);
-Adafruit_MQTT_Subscribe openDoorFeed = Adafruit_MQTT_Subscribe(&mqtt, AIO_USERNAME "/feeds/led-di-prova");
+//Adafruit_MQTT_Subscribe openDoorFeed = Adafruit_MQTT_Subscribe(&mqtt, AIO_USERNAME "/feeds/led-di-prova");
+Adafruit_MQTT_Publish g_iot_feed = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/led-di-prova");
 
 static Led g_led_r = Led("LED_R", D7, 1023, true, 25, 2500);
 static Led g_led_g = Led("LED_G", D6, 1023, true, 25, 2500);
@@ -142,7 +143,18 @@ void setup()
   Serial.println("IP del modulo ESP8266 : ");
   Serial.println(WiFi.localIP());
 
-  mqtt.subscribe(&openDoorFeed);
+  //mqtt.subscribe(&openDoorFeed);
+}
+
+//--------------------------------------------
+static void led_rgb_update(const String& color)
+{
+  String ar = color.substring(1, 3);
+  String ag = color.substring(3, 5);
+  String ab = color.substring(5, 7);
+  g_led_r.setLuminosity(atox(ar) * 4);
+  g_led_g.setLuminosity(atox(ag) * 4);
+  g_led_b.setLuminosity(atox(ab) * 4);
 }
 
 //--------------------------------------------
@@ -150,55 +162,40 @@ void loop()
 {
   unsigned long tout = 0;
   static int con_err = 0;
+  static const String colors[] =
+  {
+    "#FF0000",
+    "#00FF00",
+    "#0000FF",
+    "#00FFFF",
+    "#FFFF00",
+    "#FF00FF",
+    "#8000FF",
+    "#00FF80",
+    "#FF8000",
+    "#FFFFFF",
+    "FINE"
+  };
+  static int i = 0;
 
   MQTT_connect();
-  Adafruit_MQTT_Subscribe *subscription;
-
-  while ((subscription = mqtt.readSubscription(5000)))
-  {
-    if (subscription == &openDoorFeed)
-    {
-      String rx((char*)openDoorFeed.lastread);
-      int rxlen = rx.length();
-
-      Serial.print(F("Dati ricevuti ("));
-      Serial.print(rxlen);
-      Serial.print(F(") : "));
-      Serial.println((char *)openDoorFeed.lastread);
-      do
-      {
-        if (rx.equalsIgnoreCase("ON")) {
-          accendi_il_led();
-          break;
-        }
-
-        if (rx.equalsIgnoreCase("OFF")) {
-          spegni_il_led();
-          break;
-        }
-
-        if (rxlen == 1) {
-          char n = rx[0];
-          if (n >= '0' && n <= '9') {
-            lampeggia(n - '0');
-            //dimmer_led_perc((n - '0') * 10);
-          }
-          break;
-        }
-
-        if (rx[0] == '#') {
-          String ar = rx.substring(1, 3);
-          String ag = rx.substring(3, 5);
-          String ab = rx.substring(5, 7);
-          g_led_r.setLuminosity(atox(ar) * 4);
-          g_led_g.setLuminosity(atox(ag) * 4);
-          g_led_b.setLuminosity(atox(ab) * 4);
-          break;
-        }
-      } while (0);
+  
+  if (!g_iot_feed.publish((uint8_t*)colors[i].c_str(), colors[i].length())) {
+    Serial.println("Error during upload");
+    delay(2000);
+  }
+  else {
+    Serial.println(colors[i]);
+    led_rgb_update(colors[i]);
+    ++i;
+    if (colors[i].equalsIgnoreCase("FINE")) {
+      i = 0;
+    }
+    for (int x=0; x<10; ++x) {
+      delay(1000); mqtt.ping();
     }
   }
-
+  
   // Verifica la connessione
   if (mqtt.connected())
   {
@@ -212,4 +209,5 @@ void loop()
       }
     }
   }
+
 }
