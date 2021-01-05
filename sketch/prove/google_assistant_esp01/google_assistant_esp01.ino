@@ -1,6 +1,7 @@
 #include <ESP8266WiFi.h>
 #include "Adafruit_MQTT.h"
 #include "Adafruit_MQTT_Client.h"
+#include "Led.h"
 #include "wifi_net.h"
 
 #ifndef STASSID
@@ -8,27 +9,33 @@
 #endif
 
 #define DOOR_PIN        LED_BUILTIN
+
 #define WLAN_SSID       STASSID //Il nome della tua connessione wifi
 #define WLAN_PASS       STAPSK //La password della tua connessione wifi
 #define AIO_SERVER      "io.adafruit.com"
 #define AIO_SERVERPORT  1883 //per il protocollo SSL usare la porta 8883
 #define AIO_USERNAME    "ovk74" //Username creato su Adafruit
-#define AIO_KEY         "aio_JQwi29eMqfo6RJWOoKPi7e3XIdMy" //IO_key creata su Adafruit
+#define AIO_KEY         "aio_xrTT49B9t4PdGMTPNDPKQkPwG0Yc" //IO_key creata su Adafruit
 
-#define LED_R           D7
-#define LED_G           D6
-#define LED_B           D5
-
-
-
-WiFiClient client;
+//--------------------------------------------
+static WiFiClient client;
 
 Adafruit_MQTT_Client mqtt(&client, AIO_SERVER, AIO_SERVERPORT, AIO_USERNAME, AIO_KEY);
 Adafruit_MQTT_Subscribe openDoorFeed = Adafruit_MQTT_Subscribe(&mqtt, AIO_USERNAME "/feeds/led-di-prova");
 
-void MQTT_connect();
+static Led g_led_r = Led("LED_R", D7, 1023, true, 25, 2500);
+static Led g_led_g = Led("LED_G", D6, 1023, true, 25, 2500);
+static Led g_led_b = Led("LED_B", D5, 1023, true, 25, 2500);
 
+//--------------------------------------------
+static void accendi_il_led() {
+  digitalWrite(DOOR_PIN, HIGH);
+}
 
+//--------------------------------------------
+static void spegni_il_led() {
+  digitalWrite(DOOR_PIN, LOW);
+}
 
 //--------------------------------------------
 static void lampeggia(int n)
@@ -43,55 +50,55 @@ static void lampeggia(int n)
 }
 
 //--------------------------------------------
-static void dimmer_led_hex(int val) {
-  if (val >= 128) {
-    digitalWrite(DOOR_PIN, LOW);
+static int atox(String& str)
+{
+  int rv = 0;
+  int test = 1;
+  int len = str.length() - 1;
+  while (len >= 0) {
+    char p = str[len];
+    int add = 0;
+    do {
+      if (p >= '0' && p <= '9') {
+        add = (int)(p - '0');
+        break;
+      }
+      if (p >= 'A' && p <= 'F') {
+        add = (int)(p + 10 - 'A');
+        break;
+      }
+      if (p >= 'a' && p <= 'f') {
+        add = (int)(p + 10 - 'a');
+        break;
+      }
+    } while (0);
+
+    rv += add * test;
+    test *= 16;
+    --len;
   }
-  else {
-    digitalWrite(DOOR_PIN, HIGH);
-  }
-  //analogWrite(DOOR_PIN, val);
+  return rv;
 }
 
 //--------------------------------------------
-static void dimmer_led_perc(int perc) {
-  if (perc < 0) {
-    perc = 0;
-  }
-  if (perc > 100) {
-    perc = 100;
-  }
-  dimmer_led_hex((perc * 255) / 100);
-}
-
-//--------------------------------------------
-static void accendi_il_led() {
-  dimmer_led_hex(255);
-}
-
-//--------------------------------------------
-static void spegni_il_led() {
-  dimmer_led_hex(0);
-}
-
-//--------------------------------------------
-void MQTT_connect()
+static bool MQTT_connect()
 {
   int8_t ret;
 
   if (mqtt.connected()) {
-    return;
+    return true;
   }
 
   spegni_il_led();
   Serial.print("Connessione al server MQTT... ");
 
   uint8_t retries = 3;
-  while ((ret = mqtt.connect()) != 0) {
+  while ((ret = mqtt.connect()) != 0)
+  {
     Serial.println(mqtt.connectErrorString(ret));
     Serial.println("Tentativo di connessione tra 5 secondi...");
+
     mqtt.disconnect();
-    //delay(5000);
     for (int i = 0; i < 20; ++i) {
       accendi_il_led();
       delay(100);
@@ -100,45 +107,24 @@ void MQTT_connect()
     }
     retries--;
     if (retries == 0) {
-      while (1);
+      return false;
     }
   }
+
   Serial.println("MQTT connesso!");
   lampeggia(2);
-}
 
+  return true;
+}
 
 //--------------------------------------------
 void setup()
 {
-
-  digitalWrite(LED_R, HIGH);
-  digitalWrite(LED_G, HIGH);
-  digitalWrite(LED_B, HIGH);
-  pinMode(LED_R, OUTPUT);
-  pinMode(LED_G, OUTPUT);
-  pinMode(LED_B, OUTPUT);
-
   Serial.begin(115200);
   delay(10);
 
   pinMode(DOOR_PIN, OUTPUT);
   digitalWrite(DOOR_PIN, 0);
-
-#if 0
-  for (int i = 0; i < 255; i++) {
-    analogWrite(LED_B, i);
-    Serial.println(i);
-    delay(5);
-  }
-  for (int i = 255; i > 0; i--) {
-    analogWrite(LED_B, i);
-    Serial.println(i);
-    delay(5);
-  }
-#endif
-  //digitalWrite(DOOR_PIN, LOW);
-  //analogWrite(DOOR_PIN, 0);
 
   Serial.println(); Serial.println();
   Serial.print("Connessione alla rete Wi-FI ");
@@ -146,7 +132,6 @@ void setup()
 
   WiFi.begin(WLAN_SSID, WLAN_PASS);
   while (WiFi.status() != WL_CONNECTED) {
-    //delay(500);
     lampeggia(1);
     Serial.print("*");
   }
@@ -157,81 +142,41 @@ void setup()
   Serial.println("IP del modulo ESP8266 : ");
   Serial.println(WiFi.localIP());
 
-
   mqtt.subscribe(&openDoorFeed);
 }
 
-static void init_gpio()
-{
-  static bool done = false;
-  if (done) return;
-
-  done = true;
-
-  digitalWrite(LED_R, HIGH);
-  digitalWrite(LED_G, HIGH);
-  digitalWrite(LED_B, HIGH);
-  pinMode(LED_R, OUTPUT);
-  pinMode(LED_G, OUTPUT);
-  pinMode(LED_B, OUTPUT);
-
-  digitalWrite(LED_R, 1); digitalWrite(LED_G, 1); digitalWrite(LED_B, 1); delay(500);
-
-  digitalWrite(LED_R, 1); digitalWrite(LED_G, 1); digitalWrite(LED_B, 0); delay(500);
-  digitalWrite(LED_R, 1); digitalWrite(LED_G, 0); digitalWrite(LED_B, 1); delay(500);
-  digitalWrite(LED_R, 0); digitalWrite(LED_G, 1); digitalWrite(LED_B, 1); delay(500);
-
-  digitalWrite(LED_R, 1); digitalWrite(LED_G, 0); digitalWrite(LED_B, 0); delay(500);
-  digitalWrite(LED_R, 0); digitalWrite(LED_G, 1); digitalWrite(LED_B, 0); delay(500);
-  digitalWrite(LED_R, 0); digitalWrite(LED_G, 0); digitalWrite(LED_B, 1); delay(500);
-  digitalWrite(LED_R, 0); digitalWrite(LED_G, 0); digitalWrite(LED_B, 0); delay(500);
-  digitalWrite(LED_R, 1); digitalWrite(LED_G, 1); digitalWrite(LED_B, 1); delay(500);
-}
-
 //--------------------------------------------
-
-
 void loop()
 {
+  unsigned long tout = 0;
+  static int con_err = 0;
+
   MQTT_connect();
-
-  init_gpio();
-
   Adafruit_MQTT_Subscribe *subscription;
 
-
-  
   while ((subscription = mqtt.readSubscription(5000)))
   {
     if (subscription == &openDoorFeed)
     {
-      char* rx = (char*)openDoorFeed.lastread;
-      int rxlen = strlen(rx);
+      String rx((char*)openDoorFeed.lastread);
+      int rxlen = rx.length();
 
       Serial.print(F("Dati ricevuti ("));
       Serial.print(rxlen);
       Serial.print(F(") : "));
       Serial.println((char *)openDoorFeed.lastread);
-      //      digitalWrite(DOOR_PIN, (int)openDoorFeed.lastread);
-
       do
       {
-        if (!strcmp(rx, "on"))  {
+        if (rx.equalsIgnoreCase("ON")) {
           accendi_il_led();
           break;
         }
-        if (!strcmp(rx, "off")) {
+
+        if (rx.equalsIgnoreCase("OFF")) {
           spegni_il_led();
           break;
         }
-        if (!strcmp(rx, "ON"))  {
-          accendi_il_led();
-          break;
-        }
-        if (!strcmp(rx, "OFF")) {
-          spegni_il_led();
-          break;
-        }
+
         if (rxlen == 1) {
           char n = rx[0];
           if (n >= '0' && n <= '9') {
@@ -241,11 +186,30 @@ void loop()
           break;
         }
 
+        if (rx[0] == '#') {
+          String ar = rx.substring(1, 3);
+          String ag = rx.substring(3, 5);
+          String ab = rx.substring(5, 7);
+          g_led_r.setLuminosity(atox(ar) * 4);
+          g_led_g.setLuminosity(atox(ag) * 4);
+          g_led_b.setLuminosity(atox(ab) * 4);
+          break;
+        }
       } while (0);
     }
   }
 
-  if (! mqtt.ping()) {
-    mqtt.disconnect();
+  // Verifica la connessione
+  if (mqtt.connected())
+  {
+    if (mqtt.ping()) {
+      con_err = 0;
+    }
+    else {
+      if (++con_err > 3) {
+        Serial.println("Missing PING 3 times, disocnnect from MQTT");
+        mqtt.disconnect();
+      }
+    }
   }
 }
