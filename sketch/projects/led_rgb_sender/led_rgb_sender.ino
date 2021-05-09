@@ -15,7 +15,7 @@
 #define AIO_SERVER      "io.adafruit.com"
 #define AIO_SERVERPORT  1883 //per il protocollo SSL usare la porta 8883
 #define AIO_USERNAME    "ovk74" //Username creato su Adafruit
-#define AIO_KEY         "aio_arGJ10si5CKEdGrKMFRDiKut9E7W" //IO_key creata su Adafruit
+#define AIO_KEY         "aio_tqqV63ABy7gWiRHsGJfjl9sl3eER" //IO_key creata su Adafruit
 
 //--------------------------------------------
 static WiFiClient client;
